@@ -39,6 +39,7 @@ cp config.example.js config.js
    - Twitter account credentials (username, password, email)
    - Target username to monitor
    - Discord webhook URL
+   - Keywords to monitor for notifications
    - Monitoring intervals (optional)
 
 ## Configuration
@@ -55,12 +56,47 @@ module.exports = {
     monitoring: {
         targetUsername: "username_to_monitor",
         checkInterval: 10000, // Check every 10 seconds
-        rateLimitDelay: 10000 // Delay between requests
+        rateLimitDelay: 10000, // Delay between requests
+        keywords: ["queue", "live", "stream"], // Keywords to monitor for notifications
+        sendAllTweets: false // Set to true to send all tweets, false to only send tweets with keywords
     },
     discord: {
         webhookUrl: "https://discord.com/api/webhooks/YOUR_WEBHOOK_URL_HERE"
     }
 };
+```
+
+## Keyword Configuration
+
+The scraper can be configured to send notifications based on specific keywords found in tweets:
+
+### Keyword Monitoring (Default)
+```javascript
+keywords: ["queue", "live", "stream"], // Keywords to monitor
+sendAllTweets: false // Only send tweets containing keywords
+```
+
+### Send All Tweets
+```javascript
+sendAllTweets: true // Send notification for every new tweet
+```
+
+### Keyword Matching
+- Keywords are case-insensitive (`"Queue"` matches `"queue"`)
+- Partial matching (`"live"` matches `"going live soon"`)
+- Multiple keywords can be specified
+- If any keyword matches, the notification is sent
+
+### Examples
+```javascript
+// Monitor for gaming/streaming keywords
+keywords: ["live", "stream", "playing", "queue"]
+
+// Monitor for announcements
+keywords: ["announcement", "update", "release", "news"]
+
+// Monitor for specific phrases
+keywords: ["going live", "new video", "just posted"]
 ```
 
 ## Usage
