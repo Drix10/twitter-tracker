@@ -413,17 +413,14 @@ class TwitterScraper {
     }
 
     shouldSendTweet(tweetText) {
-        // If sendAllTweets is enabled, send every tweet
         if (config.monitoring.sendAllTweets) {
             return { send: true, reason: "sendAllTweets enabled" };
         }
 
-        // If no keywords are configured or empty array, don't send anything
         if (!config.monitoring.keywords || config.monitoring.keywords.length === 0) {
             return { send: false, reason: "no keywords configured" };
         }
 
-        // Check if tweet contains any of the configured keywords (case-insensitive)
         const tweetTextLower = tweetText.toLowerCase();
         const matchedKeywords = config.monitoring.keywords.filter(keyword =>
             tweetTextLower.includes(keyword.toLowerCase())
@@ -496,7 +493,6 @@ class TwitterScraper {
         console.log(`Target: ${TWITTER_URL}`);
         console.log(`Discord webhook configured`);
 
-        // Show keyword configuration
         if (config.monitoring.sendAllTweets) {
             console.log(`Notification mode: ALL TWEETS`);
         } else if (config.monitoring.keywords && config.monitoring.keywords.length > 0) {
@@ -552,7 +548,6 @@ class TwitterScraper {
                         console.log(`URL: ${tweet.url}`);
                         console.log(`Media: ${tweet.images.length} images, ${tweet.videos.length} videos\n`);
 
-                        // Check if we should send this tweet based on configuration
                         const shouldSendTweet = this.shouldSendTweet(tweet.text);
 
                         if (shouldSendTweet.send) {
