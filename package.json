@@ -1,0 +1,26 @@
+{
+    "name": "twitter-scraper",
+    "version": "1.0.0",
+    "description": "Twitter scraper that monitors for new tweets and sends to Discord",
+    "main": "twitter-scraper.js",
+    "scripts": {
+        "start": "node twitter-scraper.js",
+        "dev": "nodemon twitter-scraper.js"
+    },
+    "dependencies": {
+        "selenium-webdriver": "^4.15.0",
+        "axios": "^1.6.0"
+    },
+    "devDependencies": {
+        "nodemon": "^3.0.1"
+    },
+    "keywords": [
+        "twitter",
+        "scraper",
+        "selenium",
+        "discord",
+        "webhook"
+    ],
+    "author": "",
+    "license": "MIT"
+}
