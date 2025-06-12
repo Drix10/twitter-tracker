@@ -227,7 +227,6 @@ class TwitterScraper {
         const maxRetries = 3;
         try {
             await this.checkRateLimit();
-            console.log(`Navigating to ${TWITTER_URL}...`);
 
             const randomDelay = Math.floor(Math.random() * 2000) + 1000;
             await this.sleep(randomDelay);
@@ -241,7 +240,6 @@ class TwitterScraper {
                     10000
                 );
             } catch (authError) {
-                console.log("Authentication may have expired, attempting re-login...");
                 await this.login();
                 await this.sleep(3000);
                 return this.getLatestTweet(retryCount + 1);
@@ -253,7 +251,6 @@ class TwitterScraper {
                     8000
                 );
             } catch (pageError) {
-                console.log("Page structure not loaded properly - refreshing page...");
                 await this.driver.navigate().refresh();
                 await this.sleep(3000);
                 if (retryCount < maxRetries) {
@@ -264,7 +261,6 @@ class TwitterScraper {
 
             let tweetElement = null;
             try {
-                console.log("Quick check for any tweets...");
                 await this.driver.wait(
                     until.elementLocated(By.css('article[data-testid="tweet"], [role="article"]')),
                     10000
@@ -281,16 +277,68 @@ class TwitterScraper {
 
                 for (const selector of tweetSelectors) {
                     try {
-                        console.log(`Trying selector: ${selector}`);
-                        tweetElement = await this.driver.findElement(By.css(selector));
-                        console.log(`Found tweet with selector: ${selector}`);
-                        break;
+                        const tweetElements = await this.driver.findElements(By.css(selector));
+
+                        if (tweetElements.length > 0) {
+                            for (const element of tweetElements) {
+                                try {
+                                    const isVisible = await element.isDisplayed();
+                                    if (!isVisible) continue;
+
+                                    const isPinned = await this.isPinnedTweet(element);
+                                    const isRetweet = await this.isRetweetElement(element);
+                                    const isPromoted = await this.isPromotedTweet(element);
+                                    const isReply = await this.isReplyTweet(element);
+
+                                    if (!isPinned && !isPromoted) {
+                                        tweetElement = element;
+                                        break;
+                                    }
+                                } catch (elementError) {
+                                    continue;
+                                }
+                            }
+
+                            if (tweetElement) break;
+                        }
                     } catch (selectorError) {
                         continue;
                     }
                 }
+
+                if (!tweetElement) {
+                    const fallbackSelectors = [
+                        'div[data-testid="primaryColumn"] div[data-testid="cellInnerDiv"]:not([data-testid="promotedTweet"]) article',
+                        'main div[role="main"] article:not([data-promoted="true"])',
+                        'section[role="region"] article[data-testid="tweet"]'
+                    ];
+
+                    for (const selector of fallbackSelectors) {
+                        try {
+                            const elements = await this.driver.findElements(By.css(selector));
+                            for (const element of elements) {
+                                try {
+                                    const isVisible = await element.isDisplayed();
+                                    if (!isVisible) continue;
+
+                                    const isPinned = await this.isPinnedTweet(element);
+                                    const isPromoted = await this.isPromotedTweet(element);
+
+                                    if (!isPinned && !isPromoted) {
+                                        tweetElement = element;
+                                        break;
+                                    }
+                                } catch (e) {
+                                    continue;
+                                }
+                            }
+                            if (tweetElement) break;
+                        } catch (e) {
+                            continue;
+                        }
+                    }
+                }
             } catch (quickCheckError) {
-                console.log("No tweets detected - restarting browser and re-login...");
                 await this.refreshBrowser();
                 if (retryCount < maxRetries) {
                     return this.getLatestTweet(retryCount + 1);
@@ -299,26 +347,210 @@ class TwitterScraper {
             }
 
             if (!tweetElement) {
-                console.log("No tweet elements found - restarting browser and re-login...");
                 await this.refreshBrowser();
                 if (retryCount < maxRetries) {
                     return this.getLatestTweet(retryCount + 1);
                 }
-                throw new Error("No tweet elements found after browser restart");
+                throw new Error("No valid tweet elements found after browser restart");
             }
 
             const tweetData = await this.extractTweetData(tweetElement);
+
+            if (!tweetData || !tweetData.text || tweetData.text.trim() === '') {
+                if (retryCount < maxRetries) {
+                    await this.sleep(5000);
+                    return this.getLatestTweet(retryCount + 1);
+                }
+            }
+
             return tweetData;
         } catch (error) {
-            console.error(`Error getting latest tweet (attempt ${retryCount + 1}):`, error.message);
-
             if (retryCount < maxRetries) {
-                console.log(`Retrying in 30 seconds... (${retryCount + 1}/${maxRetries})`);
                 await this.sleep(30000);
                 return this.getLatestTweet(retryCount + 1);
             }
-
             return null;
+        }
+    }
+
+    async isPinnedTweet(tweetElement) {
+        try {
+            const pinnedSelectors = [
+                '[data-testid="pin"]',
+                '[aria-label*="Pinned"]',
+                '[aria-label*="pinned"]',
+                'svg[data-testid="pin"]',
+                '[data-testid="socialContext"]',
+                '[data-testid="tweet"] [data-testid="socialContext"] span',
+                'div[data-testid="socialContext"] span',
+                'span[data-testid="socialContext"]'
+            ];
+
+            for (const selector of pinnedSelectors) {
+                try {
+                    const elements = await tweetElement.findElements(By.css(selector));
+                    for (const element of elements) {
+                        try {
+                            if (selector.includes('socialContext') || selector.includes('span')) {
+                                const text = await element.getText();
+                                if (text && (text.toLowerCase().includes('pinned') || text.toLowerCase().includes('📌'))) {
+                                    return true;
+                                }
+                            } else {
+                                const isDisplayed = await element.isDisplayed();
+                                if (isDisplayed) return true;
+                            }
+                        } catch (e) {
+                            continue;
+                        }
+                    }
+                } catch (e) {
+                    continue;
+                }
+            }
+
+            try {
+                const tweetText = await tweetElement.getText();
+                if (tweetText && (tweetText.includes('Pinned Tweet') || tweetText.includes('📌'))) {
+                    return true;
+                }
+            } catch (e) {
+                // ignore
+            }
+
+            try {
+                const parentElement = await tweetElement.findElement(By.xpath('..'));
+                const parentText = await parentElement.getText();
+                if (parentText && parentText.toLowerCase().includes('pinned')) {
+                    return true;
+                }
+            } catch (e) {
+                // ignore
+            }
+
+            return false;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    async isRetweetElement(tweetElement) {
+        try {
+            const retweetSelectors = [
+                '[data-testid="socialContext"] span[data-testid="socialContext"]',
+                'div[data-testid="socialContext"]',
+                'span:contains("retweeted")',
+                'span:contains("Retweeted")',
+                '[aria-label*="retweeted"]',
+                '[aria-label*="Retweeted"]'
+            ];
+
+            for (const selector of retweetSelectors) {
+                try {
+                    const element = await tweetElement.findElement(By.css(selector));
+                    const text = await element.getText();
+                    if (text && (text.toLowerCase().includes('retweeted') || text.includes('🔄'))) {
+                        return true;
+                    }
+                } catch (e) {
+                    continue;
+                }
+            }
+
+            try {
+                const tweetText = await tweetElement.getText();
+                if (tweetText && (tweetText.includes('retweeted') || tweetText.includes('Retweeted'))) {
+                    return true;
+                }
+            } catch (e) {
+                // ignore
+            }
+
+            return false;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    async isPromotedTweet(tweetElement) {
+        try {
+            const promotedSelectors = [
+                '[data-testid="promotedIndicator"]',
+                '[data-promoted="true"]',
+                '[aria-label*="Promoted"]',
+                '[aria-label*="promoted"]',
+                'span:contains("Promoted")',
+                'span:contains("Ad")',
+                '[data-testid="socialContext"] span:contains("Promoted")'
+            ];
+
+            for (const selector of promotedSelectors) {
+                try {
+                    const element = await tweetElement.findElement(By.css(selector));
+                    const isDisplayed = await element.isDisplayed();
+                    if (isDisplayed) return true;
+                } catch (e) {
+                    continue;
+                }
+            }
+
+            try {
+                const tweetText = await tweetElement.getText();
+                if (tweetText && (tweetText.includes('Promoted') || tweetText.includes('Ad •'))) {
+                    return true;
+                }
+            } catch (e) {
+                // ignore
+            }
+
+            try {
+                const parentElement = await tweetElement.findElement(By.xpath('..'));
+                const parentClass = await parentElement.getAttribute('class');
+                if (parentClass && parentClass.includes('promoted')) {
+                    return true;
+                }
+            } catch (e) {
+                // ignore
+            }
+
+            return false;
+        } catch (error) {
+            return false;
+        }
+    }
+
+    async isReplyTweet(tweetElement) {
+        try {
+            const replySelectors = [
+                '[data-testid="socialContext"] span:contains("Replying to")',
+                'div[data-testid="socialContext"]:contains("Replying to")',
+                '[aria-label*="Replying to"]'
+            ];
+
+            for (const selector of replySelectors) {
+                try {
+                    const element = await tweetElement.findElement(By.css(selector));
+                    const text = await element.getText();
+                    if (text && text.toLowerCase().includes('replying to')) {
+                        return true;
+                    }
+                } catch (e) {
+                    continue;
+                }
+            }
+
+            try {
+                const tweetText = await tweetElement.getText();
+                if (tweetText && tweetText.includes('Replying to')) {
+                    return true;
+                }
+            } catch (e) {
+                // ignore
+            }
+
+            return false;
+        } catch (error) {
+            return false;
         }
     }
 
